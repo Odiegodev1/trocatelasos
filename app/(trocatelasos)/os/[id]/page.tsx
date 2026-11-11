@@ -5,8 +5,8 @@ import { connection } from "next/server";
 import { auth } from "@/lib/auth";
 
 import { buscarOrdemServico } from "@/app/actions/ordem-servico/buscar-ordem-servico";
-import { DetalhesOrdemServico } from "./components/DetalhesOrdemServico";
 
+import { DetalhesOrdemServico } from "./components/DetalhesOrdemServico";
 
 interface PageProps {
   params: Promise<{
@@ -14,38 +14,46 @@ interface PageProps {
   }>;
 }
 
-async function ConteudoOS({
-  params,
-}: PageProps) {
-  // Permite renderização dinâmica.
+async function ConteudoOS({ params }: PageProps) {
   await connection();
 
-  // Agora o acesso aos params acontece dentro do Suspense.
   const { id } = await params;
 
+  // Verifica autenticação
   const session = await auth();
 
   if (!session?.user?.id) {
     redirect("/login");
   }
 
+  // Valida número da OS
   const numero = Number(id);
 
   if (!Number.isSafeInteger(numero) || numero <= 0) {
     notFound();
   }
 
+  // Busca OS
   const resultado = await buscarOrdemServico(numero);
 
   if (!resultado.success || !resultado.data) {
     notFound();
   }
 
-  return (
-    <DetalhesOrdemServico dadosOS={resultado.data as any}
-      
-    />
-  );
+  const os = resultado.data;
+
+  // Adapta o checklist retornado pelo Prisma
+  // para o formato esperado pelo formulário.
+  const dadosOS = {
+    ...os,
+
+    checklist: os.checklist.map((registro) => ({
+      item: registro.itemId,
+      resposta: registro.opcao,
+    })),
+  };
+
+  return <DetalhesOrdemServico dadosOS={dadosOS} />;
 }
 
 function CarregandoOS() {
@@ -73,9 +81,7 @@ function CarregandoOS() {
   );
 }
 
-export default function PaginaOrdemServico({
-  params,
-}: PageProps) {
+export default function PaginaOrdemServico({ params }: PageProps) {
   return (
     <Suspense fallback={<CarregandoOS />}>
       <ConteudoOS params={params} />
