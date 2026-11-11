@@ -1,0 +1,268 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+ 
+}
+
+// ---------------------------------------------------------------
+// AUTENTICAÇÃO (Auth.js)
+// ---------------------------------------------------------------
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  password       String?
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  role          Role      @default(TECNICO)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  
+  accounts Account[]
+  sessions Session[]
+
+  ordensCriadas   OrdemServico[]    @relation("OsCriadaPor")
+  historicoStatus HistoricoStatus[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+enum Role {
+  ADMIN
+  TECNICO
+}
+
+// ---------------------------------------------------------------
+// CLIENTES
+// ---------------------------------------------------------------
+
+model Cliente {
+  id        String   @id @default(cuid())
+  nome      String
+  telefone  String?
+  cpfRg     String?  @map("cpf_rg")
+  endereco  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ordens OrdemServico[]
+
+  @@index([nome])
+  @@index([telefone])
+  @@map("clientes")
+}
+
+// ---------------------------------------------------------------
+// ORDENS DE SERVIÇO
+// ---------------------------------------------------------------
+
+model OrdemServico {
+  id     String @id @default(cuid())
+  numero Int    @unique @default(autoincrement())
+
+  // Código usado no link público e no QR code: /acompanhar?os=2743&k=k7m2qx
+  codigoAcesso String @unique @default(cuid()) @map("codigo_acesso")
+
+  status StatusOS @default(RECEBIDO)
+
+  // Serviço
+  servico String
+
+  // Cliente
+  clienteId String  @map("cliente_id")
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+
+  // Aparelho
+  aparelho String
+  imei     String?
+
+  // Valores
+  total          Decimal       @default(0) @db.Decimal(10, 2)
+  sinal          Decimal       @default(0) @db.Decimal(10, 2)
+  formaPagamento FormaPagamento? @map("forma_pagamento")
+  pago           Boolean       @default(false)
+
+  // Prazos e responsáveis
+  dataEntrada  DateTime  @default(now()) @map("data_entrada") @db.Date
+  dataPrevisao DateTime? @map("data_previsao") @db.Date
+  dataEntrega  DateTime? @map("data_entrega") @db.Date
+  receptor     String?
+  tecnico      String?
+  entregador   String?
+
+  // Estado do aparelho na chegada
+  clienteNaoSabe Boolean @default(false) @map("cliente_nao_sabe")
+  jaFoiAberto    Boolean @default(false) @map("ja_foi_aberto")
+  naoTestado     Boolean @default(false) @map("nao_testado")
+  outroDescricao String? @map("outro_descricao")
+
+  // Relato e avaliação
+  relatoCliente      String?  @db.Text @map("relato_cliente")
+  avaliacaoTecnica   String?  @db.Text @map("avaliacao_tecnica")
+  fornecedor         String?
+  pecasRisco         String?  @map("pecas_risco")
+  optouNaoRealizar   Boolean  @default(false) @map("optou_nao_realizar")
+
+  // Garantia
+  garantiaDias       Int       @default(90) @map("garantia_dias")
+  garantiaInicio     DateTime? @map("garantia_inicio") @db.Date
+  garantiaVenceEm    DateTime? @map("garantia_vence_em") @db.Date
+  garantiaCobertura  String?   @db.Text @map("garantia_cobertura")
+
+  // Recado exibido na página pública
+  mensagemCliente String? @db.Text @map("mensagem_cliente")
+
+  criadoPorId String? @map("criado_por_id")
+  criadoPor   User?   @relation("OsCriadaPor", fields: [criadoPorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  checklist ChecklistResposta[]
+  historico HistoricoStatus[]
+
+  @@index([clienteId])
+  @@index([status])
+  @@index([dataPrevisao])
+  @@index([createdAt])
+  @@map("ordens_servico")
+}
+
+// Um registro por item marcado no checklist.
+// "itemId" é o mesmo id usado no formulário (manchas, piscando, naoLiga, outro...).
+model ChecklistResposta {
+  id     String           @id @default(cuid())
+  osId   String           @map("os_id")
+  itemId String           @map("item_id")
+  grupo  GrupoChecklist
+  opcao  OpcaoChecklist
+
+  os OrdemServico @relation(fields: [osId], references: [id], onDelete: Cascade)
+
+  @@unique([osId, itemId])
+  @@index([osId])
+  @@map("checklist_respostas")
+}
+
+model HistoricoStatus {
+  id        String   @id @default(cuid())
+  osId      String   @map("os_id")
+  status    StatusOS
+  observacao String?
+  userId    String?  @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  os   OrdemServico @relation(fields: [osId], references: [id], onDelete: Cascade)
+  user User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([osId, createdAt])
+  @@map("historico_status")
+}
+
+// ---------------------------------------------------------------
+// CONFIGURAÇÕES DA LOJA (uma única linha, id = "loja")
+// ---------------------------------------------------------------
+
+model Configuracao {
+  id                  String   @id @default("loja")
+  empresa             String   @default("TROCA TELAS E MUITO+")
+  subtitulo           String   @default("ASSISTÊNCIA TÉCNICA E ACESSÓRIOS PARA CELULARES E INFORMÁTICA")
+  endereco            String   @default("Rua 13, esquina com 91, 1287 - Jaconé, Saquarema - RJ")
+  telefone            String   @default("(22) 99899-5338")
+  email               String   @default("lojatrocatelas@gmail.com")
+  logoUrl             String?  @map("logo_url")
+  tecnicoPadrao       String?  @map("tecnico_padrao")
+  garantiaPadraoDias  Int      @default(90) @map("garantia_padrao_dias")
+  retiradaDias        Int      @default(90) @map("retirada_dias")
+  multaPercentual     Decimal  @default(2) @db.Decimal(5, 2) @map("multa_percentual")
+  jurosPercentual     Decimal  @default(1) @db.Decimal(5, 2) @map("juros_percentual")
+  qrNaOs              Boolean  @default(true) @map("qr_na_os")
+  coberturaPadrao     String?  @db.Text @map("cobertura_padrao")
+  exclusoesGarantia   String?  @db.Text @map("exclusoes_garantia")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("configuracoes")
+}
+
+// ---------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------
+
+enum StatusOS {
+  RECEBIDO
+  ANALISE
+  AGUARDANDO_APROVACAO
+  AGUARDANDO_PECA
+  REPARO
+  PRONTO
+  ENTREGUE
+  CANCELADO
+}
+
+enum FormaPagamento {
+  DINHEIRO
+  PIX
+  CARTAO_DEBITO
+  CARTAO_CREDITO
+  DINHEIRO_PIX
+  TRANSFERENCIA
+}
+
+enum GrupoChecklist {
+  TELA
+  ENERGIA
+  GERAL
+}
+
+// Mesmos valores do array "opcoes" do componente de impressão
+enum OpcaoChecklist {
+  SIM
+  NAO
+  AUSENTE
+  NAO_AVALIADO
+}
